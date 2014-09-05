@@ -3,6 +3,7 @@
 #include <ngx_http.h>
 
 #include <syslog.h>
+#include <stdlib.h>
 
 #include "ngx_http_accounting_hash.h"
 #include "ngx_http_accounting_module.h"
@@ -11,13 +12,13 @@
 #include "ngx_http_accounting_worker_process.h"
 
 
-#define WORKER_PROCESS_TIMER_INTERVAL   30       /* In seconds */
-
 static ngx_event_t  write_out_ev;
 static ngx_http_accounting_hash_t  stats_hash;
 
 static ngx_int_t ngx_http_accounting_old_time = 0;
 static ngx_int_t ngx_http_accounting_new_time = 0;
+
+static ngx_uint_t worker_process_interval = 10;
 
 static u_char *ngx_http_accounting_title = (u_char *)"NgxAccounting";
 
@@ -46,7 +47,6 @@ ngx_http_accounting_worker_process_init(ngx_cycle_t *cycle)
     ngx_http_accounting_new_time = time->sec;
 
     openlog((char *)ngx_http_accounting_title, LOG_NDELAY, LOG_SYSLOG);
-    syslog(LOG_INFO, "pid:%i|Process:init", ngx_getpid());
 
     rc = ngx_http_accounting_hash_init(&stats_hash, NGX_HTTP_ACCOUNTING_NR_BUCKETS, cycle->pool);
     if (rc != NGX_OK) {
@@ -59,8 +59,10 @@ ngx_http_accounting_worker_process_init(ngx_cycle_t *cycle)
     write_out_ev.log = cycle->log;
     write_out_ev.handler = worker_process_alarm_handler;
 
+    worker_process_interval = amcf->interval;
+    
     srand(ngx_getpid());
-    ngx_add_timer(&write_out_ev, WORKER_PROCESS_TIMER_INTERVAL*(1000-rand()%200));
+    ngx_add_timer(&write_out_ev, worker_process_interval*(1000-rand()%200));
 
     return NGX_OK;
 }
@@ -77,8 +79,6 @@ void ngx_http_accounting_worker_process_exit(ngx_cycle_t *cycle)
     }
 
     worker_process_alarm_handler(NULL);
-
-    syslog(LOG_INFO, "pid:%i|Process:exit", ngx_getpid());
 }
 
 
@@ -134,8 +134,10 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
     ngx_uint_t   i;
     ngx_http_accounting_stats_t  *stats;
 
-    char temp_buffer[128];
     char output_buffer[1024];
+
+    ngx_uint_t status_code_buckets[10];
+    ngx_memzero(status_code_buckets, sizeof(status_code_buckets));
 
     stats = (ngx_http_accounting_stats_t *)val;
 
@@ -143,30 +145,27 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
         return NGX_OK;
     }
 
-    sprintf(output_buffer, "pid:%i|from:%ld|to:%ld|accounting_id:%s|requests:%ld|bytes_in:%ld|bytes_out:%ld",
+    for (i = 0; i < http_status_code_count; i++) {
+        ngx_uint_t bucket_idx = index_to_http_status_code_map[i] / 100;
+        status_code_buckets[bucket_idx] += stats->http_status_code[i];
+        stats->http_status_code[i] = 0;
+    }
+
+    sprintf(output_buffer, "pid:%i|from:%ld|to:%ld|accounting_id:%s|requests:%ld|bytes_in:%ld|bytes_out:%ld|2xx:%lu|4xx:%lu|5xx:%lu",
                 ngx_getpid(),
                 ngx_http_accounting_old_time,
                 ngx_http_accounting_new_time,
                 name,
                 stats->nr_requests,
                 stats->bytes_in,
-                stats->bytes_out
+                stats->bytes_out,
+                status_code_buckets[2],
+                status_code_buckets[4],
+                status_code_buckets[5]
             );
 
     stats->nr_requests = 0;
     stats->bytes_out = 0;
-
-    for (i = 0; i < http_status_code_count; i++) {
-        if(stats->http_status_code[i] > 0) {
-            sprintf(temp_buffer, "|%ld:%ld",
-                        index_to_http_status_code_map[i],
-                        stats->http_status_code[i]);
-
-            strcat(output_buffer, temp_buffer);
-
-            stats->http_status_code[i] = 0;
-        }
-    }
 
     syslog(LOG_INFO, "%s", output_buffer);
 
@@ -190,7 +189,7 @@ worker_process_alarm_handler(ngx_event_t *ev)
     if (ngx_exiting || ev == NULL)
         return;
 
-    next = (ngx_msec_t)WORKER_PROCESS_TIMER_INTERVAL * 1000;
+    next = (ngx_msec_t)worker_process_interval * 1000;
 
     ngx_add_timer(ev, next);
 }

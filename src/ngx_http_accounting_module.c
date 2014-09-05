@@ -29,6 +29,13 @@ static ngx_command_t  ngx_http_accounting_commands[] = {
       offsetof(ngx_http_accounting_main_conf_t, enable),
       NULL},
 
+    { ngx_string("http_accounting_interval"),
+      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_num_slot,
+      NGX_HTTP_MAIN_CONF_OFFSET,
+      offsetof(ngx_http_accounting_main_conf_t, interval),
+      NULL},
+
     { ngx_string("http_accounting_id"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_str_slot,
@@ -118,6 +125,7 @@ ngx_http_accounting_create_main_conf(ngx_conf_t *cf)
     }
 
     amcf->enable = NGX_CONF_UNSET;
+    amcf->interval = NGX_CONF_UNSET;
 
     return amcf;
 }
@@ -130,6 +138,9 @@ ngx_http_accounting_init_main_conf(ngx_conf_t *cf, void *conf)
 
     if (amcf->enable == NGX_CONF_UNSET) {
         amcf->enable = 0;
+    }
+    if (amcf->interval == NGX_CONF_UNSET) {
+        amcf->interval = 10;
     }
 
     return NGX_CONF_OK;
