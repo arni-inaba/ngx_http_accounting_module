@@ -93,7 +93,11 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
 
     ngx_http_accounting_stats_t *stats;
 
+    ngx_time_t * time = ngx_timeofday();
+
     accounting_id = get_accounting_id(r);
+
+    ngx_uint_t req_latency_ms = (time->sec * 1000 + time->msec) - (r->start_sec * 1000 + r->start_msec);
 
     // TODO: key should be cached to save CPU time
     key = ngx_hash_key_lc(accounting_id->data, accounting_id->len);
@@ -122,6 +126,7 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
     stats->nr_requests += 1;
     stats->bytes_in += r->request_length;
     stats->bytes_out += r->connection->sent;
+    stats->total_latency_ms += req_latency_ms;
     stats->http_status_code[http_status_code_to_index_map[status]] += 1;
 
     return NGX_OK;
@@ -141,17 +146,15 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
 
     stats = (ngx_http_accounting_stats_t *)val;
 
-    if (stats->nr_requests == 0) {
-        return NGX_OK;
+    if (stats->nr_requests > 0) {
+        for (i = 0; i < http_status_code_count; i++) {
+            ngx_uint_t bucket_idx = index_to_http_status_code_map[i] / 100;
+            status_code_buckets[bucket_idx] += stats->http_status_code[i];
+            stats->http_status_code[i] = 0;
+        }
     }
 
-    for (i = 0; i < http_status_code_count; i++) {
-        ngx_uint_t bucket_idx = index_to_http_status_code_map[i] / 100;
-        status_code_buckets[bucket_idx] += stats->http_status_code[i];
-        stats->http_status_code[i] = 0;
-    }
-
-    sprintf(output_buffer, "pid:%i|from:%ld|to:%ld|accounting_id:%s|requests:%ld|bytes_in:%ld|bytes_out:%ld|2xx:%lu|4xx:%lu|5xx:%lu",
+    sprintf(output_buffer, "%i|%ld|%ld|%s|%ld|%ld|%ld|%lu|%lu|%lu|%lu",
                 ngx_getpid(),
                 ngx_http_accounting_old_time,
                 ngx_http_accounting_new_time,
@@ -159,6 +162,7 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
                 stats->nr_requests,
                 stats->bytes_in,
                 stats->bytes_out,
+                stats->total_latency_ms / (stats->nr_requests > 0 ? stats->nr_requests : 1),
                 status_code_buckets[2],
                 status_code_buckets[4],
                 status_code_buckets[5]
@@ -166,6 +170,8 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
 
     stats->nr_requests = 0;
     stats->bytes_out = 0;
+    stats->bytes_in = 0;
+    stats->total_latency_ms = 0;
 
     syslog(LOG_INFO, "%s", output_buffer);
 
