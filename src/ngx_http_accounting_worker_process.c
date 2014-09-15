@@ -3,7 +3,6 @@
 #include <ngx_http.h>
 
 #include <syslog.h>
-#include <stdlib.h>
 
 #include "ngx_http_accounting_hash.h"
 #include "ngx_http_accounting_module.h"
