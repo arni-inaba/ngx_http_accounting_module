@@ -26,4 +26,7 @@ ngx_int_t ngx_http_accounting_hash_iterate(ngx_http_accounting_hash_t *hash,
 void * ngx_http_accounting_hash_find(ngx_http_accounting_hash_t *hash,
                 ngx_uint_t key, u_char *name, size_t len);
 
+void * ngx_http_accounting_hash_find_key(ngx_http_accounting_hash_t *hash,
+                ngx_uint_t key, u_char *name, size_t len);
+
 #endif /* _NGX_HTTP_ACCOUNTING_HASH_H_INCLUDED_ */

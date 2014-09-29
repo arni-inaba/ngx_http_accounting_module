@@ -22,7 +22,7 @@ static ngx_uint_t worker_process_interval = 10;
 static u_char *ngx_http_accounting_title = (u_char *)"NgxAccounting";
 
 static void worker_process_alarm_handler(ngx_event_t *ev);
-static ngx_str_t *get_accounting_id(ngx_http_request_t *r);
+static ngx_str_t get_accounting_id(ngx_http_request_t *r);
 
 
 ngx_int_t
@@ -84,7 +84,7 @@ void ngx_http_accounting_worker_process_exit(ngx_cycle_t *cycle)
 ngx_int_t
 ngx_http_accounting_handler(ngx_http_request_t *r)
 {
-    ngx_str_t      *accounting_id;
+    ngx_str_t       accounting_id;
     ngx_uint_t      key;
 
     ngx_uint_t      status;
@@ -96,11 +96,12 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
 
     accounting_id = get_accounting_id(r);
 
+
     ngx_uint_t req_latency_ms = (time->sec * 1000 + time->msec) - (r->start_sec * 1000 + r->start_msec);
 
     // TODO: key should be cached to save CPU time
-    key = ngx_hash_key_lc(accounting_id->data, accounting_id->len);
-    stats = ngx_http_accounting_hash_find(&stats_hash, key, accounting_id->data, accounting_id->len);
+    key = ngx_hash_key_lc(accounting_id.data, accounting_id.len);
+    stats = ngx_http_accounting_hash_find(&stats_hash, key, accounting_id.data, accounting_id.len);
 
     if (stats == NULL) {
 
@@ -111,7 +112,7 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
             return NGX_ERROR;
 
         stats->http_status_code = status_array;
-        ngx_http_accounting_hash_add(&stats_hash, key, accounting_id->data, accounting_id->len, stats);
+        ngx_http_accounting_hash_add(&stats_hash, key, accounting_id.data, accounting_id.len, stats);
     }
 
     if (r->err_status) {
@@ -199,13 +200,31 @@ worker_process_alarm_handler(ngx_event_t *ev)
     ngx_add_timer(ev, next);
 }
 
-
-static ngx_str_t *
+static ngx_str_t
 get_accounting_id(ngx_http_request_t *r)
 {
-    ngx_http_accounting_loc_conf_t  *alcf;
+    u_char *keystr;
+    char *buffer;
 
-    alcf = ngx_http_get_module_loc_conf(r, ngx_http_accounting_module);
+    buffer = calloc(256, sizeof(char));
+    memcpy(buffer, r->uri.data+1, 255);
 
-    return &alcf->accounting_id;
+    char *p = buffer;
+    while (*p != '/' && *p != ' ' && *p != '\0')
+        p++;
+    *p = '\0';
+
+    ngx_str_t ret = ngx_string(buffer);
+
+    keystr = ngx_http_accounting_hash_find_key(&stats_hash, ngx_hash_key_lc(ret.data, ret.len), ret.data, ret.len);
+
+    if (keystr != NULL) {
+        // this accounting id has already been found
+        free(buffer);
+
+        ret.data = keystr;
+        ret.len = strlen((const char *)keystr);
+    }
+
+    return ret;
 }
