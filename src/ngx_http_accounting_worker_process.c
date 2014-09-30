@@ -3,6 +3,7 @@
 #include <ngx_http.h>
 
 #include <syslog.h>
+#include <ctype.h>
 
 #include "ngx_http_accounting_hash.h"
 #include "ngx_http_accounting_module.h"
@@ -22,7 +23,8 @@ static ngx_uint_t worker_process_interval = 10;
 static u_char *ngx_http_accounting_title = (u_char *)"NgxAccounting";
 
 static void worker_process_alarm_handler(ngx_event_t *ev);
-static ngx_str_t get_accounting_id(ngx_http_request_t *r);
+static ngx_str_t extract_routing_prefix(ngx_http_request_t *r);
+static ngx_str_t create_accounting_id(u_char *key, int len);
 
 
 ngx_int_t
@@ -84,7 +86,7 @@ void ngx_http_accounting_worker_process_exit(ngx_cycle_t *cycle)
 ngx_int_t
 ngx_http_accounting_handler(ngx_http_request_t *r)
 {
-    ngx_str_t       accounting_id;
+    ngx_str_t       prefix;
     ngx_uint_t      key;
 
     ngx_uint_t      status;
@@ -104,7 +106,7 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
 
     if (stats == NULL) {
         // new routing prefix, so let's create a new accounting_id
-        ngx_str_t accounting_id = create_accounting_id(prefix);  // this feels like it could be replaced with strdup ?
+        ngx_str_t accounting_id = create_accounting_id(prefix.data, prefix.len);  // this feels like it could be replaced with strdup ?
         stats = ngx_pcalloc(stats_hash.pool, sizeof(ngx_http_accounting_stats_t));
         status_array = ngx_pcalloc(stats_hash.pool, sizeof(ngx_uint_t) * http_status_code_count);
 
@@ -204,22 +206,21 @@ static ngx_str_t
 create_accounting_id(u_char *key, int len)
 {
     u_char *buffer = calloc(len, sizeof(u_char));
-    strncpy(buffer, key, len);
+    strncpy((char *)buffer, (char *)key, len);
     return (ngx_str_t) {len, buffer};
 }
 
 static ngx_str_t
 extract_routing_prefix(ngx_http_request_t *r)
 {
-    // XXX: refactor to use some magic regex stuff..
-    char *cmp = r->uri.data+1;
-    int len = 0;
-    while (*cmp != '/' && *cmp != ' ' && *cmp != '\0' && len != r->uri.len-1)
+    u_char *cmp = r->uri.data+1;
+    u_int len = 0;
+    while (isalnum(*cmp) && len != r->uri.len-1)
     {
         len++;
         cmp++;
     }
     if (len == 0)
-        return (ngx_str_t) {7, "default"};
+        return (ngx_str_t) {7, (u_char *)"default"};
     return (ngx_str_t) {len, r->uri.data+1};
 }
