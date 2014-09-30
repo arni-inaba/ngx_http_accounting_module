@@ -94,17 +94,17 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
 
     ngx_time_t * time = ngx_timeofday();
 
-    accounting_id = get_accounting_id(r);
-
+    prefix = extract_routing_prefix(r);
 
     ngx_uint_t req_latency_ms = (time->sec * 1000 + time->msec) - (r->start_sec * 1000 + r->start_msec);
 
     // TODO: key should be cached to save CPU time
-    key = ngx_hash_key_lc(accounting_id.data, accounting_id.len);
-    stats = ngx_http_accounting_hash_find(&stats_hash, key, accounting_id.data, accounting_id.len);
+    key = ngx_hash_key_lc(prefix.data, prefix.len);
+    stats = ngx_http_accounting_hash_find(&stats_hash, key, prefix.data, prefix.len);
 
     if (stats == NULL) {
-
+        // new routing prefix, so let's create a new accounting_id
+        ngx_str_t accounting_id = create_accounting_id(prefix);  // this feels like it could be replaced with strdup ?
         stats = ngx_pcalloc(stats_hash.pool, sizeof(ngx_http_accounting_stats_t));
         status_array = ngx_pcalloc(stats_hash.pool, sizeof(ngx_uint_t) * http_status_code_count);
 
@@ -201,30 +201,25 @@ worker_process_alarm_handler(ngx_event_t *ev)
 }
 
 static ngx_str_t
-get_accounting_id(ngx_http_request_t *r)
+create_accounting_id(u_char *key, int len)
 {
-    u_char *keystr;
-    char *buffer;
+    u_char *buffer = calloc(len, sizeof(u_char));
+    strncpy(buffer, key, len);
+    return (ngx_str_t) {len, buffer};
+}
 
-    buffer = calloc(256, sizeof(char));
-    memcpy(buffer, r->uri.data+1, 255);
-
-    char *p = buffer;
-    while (*p != '/' && *p != ' ' && *p != '\0')
-        p++;
-    *p = '\0';
-
-    ngx_str_t ret = ngx_string(buffer);
-
-    keystr = ngx_http_accounting_hash_find_key(&stats_hash, ngx_hash_key_lc(ret.data, ret.len), ret.data, ret.len);
-
-    if (keystr != NULL) {
-        // this accounting id has already been found
-        free(buffer);
-
-        ret.data = keystr;
-        ret.len = strlen((const char *)keystr);
+static ngx_str_t
+extract_routing_prefix(ngx_http_request_t *r)
+{
+    // XXX: refactor to use some magic regex stuff..
+    char *cmp = r->uri.data+1;
+    int len = 0;
+    while (*cmp != '/' && *cmp != ' ' && *cmp != '\0' && len != r->uri.len-1)
+    {
+        len++;
+        cmp++;
     }
-
-    return ret;
+    if (len == 0)
+        return (ngx_str_t) {7, "default"};
+    return (ngx_str_t) {len, r->uri.data+1};
 }
