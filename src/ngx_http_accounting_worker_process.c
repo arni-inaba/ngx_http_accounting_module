@@ -205,8 +205,9 @@ worker_process_alarm_handler(ngx_event_t *ev)
 static ngx_str_t
 create_accounting_id(u_char *key, int len)
 {
-    u_char *buffer = calloc(len, sizeof(u_char));
+    u_char *buffer = (u_char *)malloc((len+1) * sizeof(u_char));
     strncpy((char *)buffer, (char *)key, len);
+    buffer[len] = '\0';
     return (ngx_str_t) {len, buffer};
 }
 
