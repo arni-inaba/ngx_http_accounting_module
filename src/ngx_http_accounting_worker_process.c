@@ -214,9 +214,10 @@ create_accounting_id(u_char *key, int len)
 static ngx_str_t
 extract_routing_prefix(ngx_http_request_t *r)
 {
-    u_char *cmp = r->uri.data+1;
+    u_char *start = r->uri.data+1;
+    u_char *cmp = start;
     u_int len = 0;
-    while ((isalnum(*cmp) || *cmp == '_' || *cmp == '-') && len != r->uri.len-1)
+    while ((isalnum(*cmp) || *cmp == '_' || *cmp == '-') && len < r->uri.len-1)
     {
         len++;
         cmp++;
@@ -225,5 +226,5 @@ extract_routing_prefix(ngx_http_request_t *r)
         return (ngx_str_t) {7, (u_char *)"default"};
     }
 
-    return (ngx_str_t) {len, r->uri.data+1};
+    return (ngx_str_t) {len, start};
 }
