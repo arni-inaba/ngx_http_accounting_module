@@ -3,6 +3,7 @@
 #include <ngx_http.h>
 
 #include <syslog.h>
+#include <ctype.h>
 
 #include "ngx_http_accounting_hash.h"
 #include "ngx_http_accounting_module.h"
@@ -22,7 +23,8 @@ static ngx_uint_t worker_process_interval = 10;
 static u_char *ngx_http_accounting_title = (u_char *)"NgxAccounting";
 
 static void worker_process_alarm_handler(ngx_event_t *ev);
-static ngx_str_t *get_accounting_id(ngx_http_request_t *r);
+static ngx_str_t extract_routing_prefix(ngx_http_request_t *r);
+static ngx_str_t create_accounting_id(u_char *key, int len);
 
 
 ngx_int_t
@@ -84,7 +86,7 @@ void ngx_http_accounting_worker_process_exit(ngx_cycle_t *cycle)
 ngx_int_t
 ngx_http_accounting_handler(ngx_http_request_t *r)
 {
-    ngx_str_t      *accounting_id;
+    ngx_str_t       prefix;
     ngx_uint_t      key;
 
     ngx_uint_t      status;
@@ -94,16 +96,17 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
 
     ngx_time_t * time = ngx_timeofday();
 
-    accounting_id = get_accounting_id(r);
+    prefix = extract_routing_prefix(r);
 
     ngx_uint_t req_latency_ms = (time->sec * 1000 + time->msec) - (r->start_sec * 1000 + r->start_msec);
 
     // TODO: key should be cached to save CPU time
-    key = ngx_hash_key_lc(accounting_id->data, accounting_id->len);
-    stats = ngx_http_accounting_hash_find(&stats_hash, key, accounting_id->data, accounting_id->len);
+    key = ngx_hash_key_lc(prefix.data, prefix.len);
+    stats = ngx_http_accounting_hash_find(&stats_hash, key, prefix.data, prefix.len);
 
     if (stats == NULL) {
-
+        // new routing prefix, so let's create a new accounting_id
+        ngx_str_t accounting_id = create_accounting_id(prefix.data, prefix.len);
         stats = ngx_pcalloc(stats_hash.pool, sizeof(ngx_http_accounting_stats_t));
         status_array = ngx_pcalloc(stats_hash.pool, sizeof(ngx_uint_t) * http_status_code_count);
 
@@ -111,7 +114,7 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
             return NGX_ERROR;
 
         stats->http_status_code = status_array;
-        ngx_http_accounting_hash_add(&stats_hash, key, accounting_id->data, accounting_id->len, stats);
+        ngx_http_accounting_hash_add(&stats_hash, key, accounting_id.data, accounting_id.len, stats);
     }
 
     if (r->err_status) {
@@ -199,13 +202,29 @@ worker_process_alarm_handler(ngx_event_t *ev)
     ngx_add_timer(ev, next);
 }
 
-
-static ngx_str_t *
-get_accounting_id(ngx_http_request_t *r)
+static ngx_str_t
+create_accounting_id(u_char *key, int len)
 {
-    ngx_http_accounting_loc_conf_t  *alcf;
+    u_char *buffer = (u_char *)malloc((len+1) * sizeof(u_char));
+    strncpy((char *)buffer, (char *)key, len);
+    buffer[len] = '\0';
+    return (ngx_str_t) {len, buffer};
+}
 
-    alcf = ngx_http_get_module_loc_conf(r, ngx_http_accounting_module);
+static ngx_str_t
+extract_routing_prefix(ngx_http_request_t *r)
+{
+    u_char *start = r->uri.data+1;
+    u_char *cmp = start;
+    u_int len = 0;
+    while ((isalnum(*cmp) || *cmp == '_' || *cmp == '-') && len < r->uri.len-1)
+    {
+        len++;
+        cmp++;
+    }
+    if (len == 0) {
+        return (ngx_str_t) {7, (u_char *)"default"};
+    }
 
-    return &alcf->accounting_id;
+    return (ngx_str_t) {len, start};
 }
