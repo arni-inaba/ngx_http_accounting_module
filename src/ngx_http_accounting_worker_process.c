@@ -106,7 +106,7 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
 
     if (stats == NULL) {
         // new routing prefix, so let's create a new accounting_id
-        ngx_str_t accounting_id = create_accounting_id(prefix.data, prefix.len);  // this feels like it could be replaced with strdup ?
+        ngx_str_t accounting_id = create_accounting_id(prefix.data, prefix.len);
         stats = ngx_pcalloc(stats_hash.pool, sizeof(ngx_http_accounting_stats_t));
         status_array = ngx_pcalloc(stats_hash.pool, sizeof(ngx_uint_t) * http_status_code_count);
 
@@ -216,12 +216,14 @@ extract_routing_prefix(ngx_http_request_t *r)
 {
     u_char *cmp = r->uri.data+1;
     u_int len = 0;
-    while (isalnum(*cmp) && len != r->uri.len-1)
+    while ((isalnum(*cmp) || *cmp == '_' || *cmp == '-') && len != r->uri.len-1)
     {
         len++;
         cmp++;
     }
-    if (len == 0)
+    if (len == 0) {
         return (ngx_str_t) {7, (u_char *)"default"};
+    }
+
     return (ngx_str_t) {len, r->uri.data+1};
 }
