@@ -3,13 +3,13 @@
 #include <ngx_http.h>
 
 #include <syslog.h>
-#include <ctype.h>
 
 #include "ngx_http_accounting_hash.h"
 #include "ngx_http_accounting_module.h"
 #include "ngx_http_accounting_common.h"
 #include "ngx_http_accounting_status_code.h"
 #include "ngx_http_accounting_worker_process.h"
+#include "ngx_http_accounting_prefix.h"
 
 
 static ngx_event_t  write_out_ev;
@@ -211,24 +211,4 @@ create_accounting_id(u_char *key, int len)
     return (ngx_str_t) {len, buffer};
 }
 
-static ngx_str_t
-extract_routing_prefix(ngx_http_request_t *r)
-{
-    u_char *start = r->uri.data;
 
-    if (start == NULL || *start != '/') {
-        return (ngx_str_t) {17, (u_char *)"malformed-request"};
-    }
-    ++start;
-    u_char *cmp = start;
-    u_int len = 0;
-    while (len < r->uri.len-1 && (isalnum(*cmp) || *cmp == '_' || *cmp == '-'))
-    {
-        len++; 
-        cmp++;
-    }
-    if (len == 0) {
-        return (ngx_str_t) {7, (u_char *)"default"};
-    }
-    return (ngx_str_t) {len, start};
-}
