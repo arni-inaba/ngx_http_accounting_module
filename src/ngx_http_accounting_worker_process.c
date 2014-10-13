@@ -23,7 +23,6 @@ static ngx_uint_t worker_process_interval = 10;
 static u_char *ngx_http_accounting_title = (u_char *)"NgxAccounting";
 
 static void worker_process_alarm_handler(ngx_event_t *ev);
-static ngx_str_t extract_routing_prefix(ngx_http_request_t *r);
 static ngx_str_t create_accounting_id(u_char *key, int len);
 
 
