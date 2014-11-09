@@ -153,6 +153,9 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
             status_code_buckets[bucket_idx] += stats->http_status_code[i];
             stats->http_status_code[i] = 0;
         }
+    } else {
+        // no requests, let's not emit any stats!
+        return NGX_OK;
     }
 
     sprintf(output_buffer, "%i|%ld|%ld|%s|%ld|%ld|%ld|%lu|%lu|%lu|%lu",
