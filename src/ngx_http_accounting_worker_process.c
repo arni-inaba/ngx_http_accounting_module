@@ -1,6 +1,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
+#include <ngx_http_upstream.h>
 
 #include <syslog.h>
 
@@ -81,7 +82,6 @@ void ngx_http_accounting_worker_process_exit(ngx_cycle_t *cycle)
     worker_process_alarm_handler(NULL);
 }
 
-
 ngx_int_t
 ngx_http_accounting_handler(ngx_http_request_t *r)
 {
@@ -91,6 +91,7 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
     ngx_uint_t      status;
     ngx_uint_t     *status_array;
 
+
     ngx_http_accounting_stats_t *stats;
 
     ngx_time_t * time = ngx_timeofday();
@@ -99,6 +100,17 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
 
     ngx_uint_t req_latency_ms = (time->sec * 1000 + time->msec) - (r->start_sec * 1000 + r->start_msec);
 
+    // following magic airlifted from ngx_http_upstream.c:4416-4423
+    ngx_uint_t upstream_req_latency_ms = 0;
+    ngx_http_upstream_state_t  *state;
+
+    if (r->upstream_states != NULL && r->upstream_states->nelts != 0) {
+        state = r->upstream_states->elts;
+        if (state[0].status) {
+            // not even checking the status here...
+	    upstream_req_latency_ms = (state[0].response_sec * 1000 + state[0].response_msec);
+        }
+    }
     // TODO: key should be cached to save CPU time
     key = ngx_hash_key_lc(prefix.data, prefix.len);
     stats = ngx_http_accounting_hash_find(&stats_hash, key, prefix.data, prefix.len);
@@ -128,6 +140,7 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
     stats->bytes_in += r->request_length;
     stats->bytes_out += r->connection->sent;
     stats->total_latency_ms += req_latency_ms;
+    stats->upstream_total_latency_ms += upstream_req_latency_ms;
     stats->http_status_code[http_status_code_to_index_map[status]] += 1;
 
     return NGX_OK;
@@ -158,7 +171,7 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
         return NGX_OK;
     }
 
-    sprintf(output_buffer, "%i|%ld|%ld|%s|%ld|%ld|%ld|%lu|%lu|%lu|%lu",
+    sprintf(output_buffer, "%i|%ld|%ld|%s|%ld|%ld|%ld|%lu|%lu|%lu|%lu|%lu",
                 ngx_getpid(),
                 ngx_http_accounting_old_time,
                 ngx_http_accounting_new_time,
@@ -167,6 +180,7 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
                 stats->bytes_in,
                 stats->bytes_out,
                 stats->total_latency_ms / (stats->nr_requests > 0 ? stats->nr_requests : 1),
+                stats->upstream_total_latency_ms / (stats->nr_requests > 0 ? stats->nr_requests : 1),
                 status_code_buckets[2],
                 status_code_buckets[4],
                 status_code_buckets[5]
@@ -176,6 +190,7 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
     stats->bytes_out = 0;
     stats->bytes_in = 0;
     stats->total_latency_ms = 0;
+    stats->upstream_total_latency_ms = 0;
 
     syslog(LOG_INFO, "%s", output_buffer);
 
