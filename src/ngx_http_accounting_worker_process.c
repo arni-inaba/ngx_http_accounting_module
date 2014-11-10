@@ -82,7 +82,6 @@ void ngx_http_accounting_worker_process_exit(ngx_cycle_t *cycle)
     worker_process_alarm_handler(NULL);
 }
 
-
 ngx_int_t
 ngx_http_accounting_handler(ngx_http_request_t *r)
 {
@@ -112,7 +111,6 @@ ngx_http_accounting_handler(ngx_http_request_t *r)
 	    upstream_req_latency_ms = (state[0].response_sec * 1000 + state[0].response_msec);
         }
     }
-
     // TODO: key should be cached to save CPU time
     key = ngx_hash_key_lc(prefix.data, prefix.len);
     stats = ngx_http_accounting_hash_find(&stats_hash, key, prefix.data, prefix.len);
@@ -192,6 +190,7 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
     stats->bytes_out = 0;
     stats->bytes_in = 0;
     stats->total_latency_ms = 0;
+    stats->upstream_total_latency_ms = 0;
 
     syslog(LOG_INFO, "%s", output_buffer);
 
