@@ -162,8 +162,12 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
 
     if (stats->nr_requests > 0) {
         for (i = 0; i < http_status_code_count; i++) {
-            ngx_uint_t bucket_idx = index_to_http_status_code_map[i] / 100;
-            status_code_buckets[bucket_idx] += stats->http_status_code[i];
+            if (index_to_http_status_code_map[i] == NGX_HTTP_CLIENT_CLOSED_REQUEST) {
+                status_code_buckets[9] += stats->http_status_code[i];
+            } else {
+                ngx_uint_t bucket_idx = index_to_http_status_code_map[i] / 100;
+                status_code_buckets[bucket_idx] += stats->http_status_code[i];    
+            }
             stats->http_status_code[i] = 0;
         }
     } else {
@@ -171,7 +175,7 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
         return NGX_OK;
     }
 
-    sprintf(output_buffer, "%i|%ld|%ld|%s|%ld|%ld|%ld|%lu|%lu|%lu|%lu|%lu",
+    sprintf(output_buffer, "%i|%ld|%ld|%s|%ld|%ld|%ld|%lu|%lu|%lu|%lu|%lu|%lu",
                 ngx_getpid(),
                 ngx_http_accounting_old_time,
                 ngx_http_accounting_new_time,
@@ -183,7 +187,8 @@ worker_process_write_out_stats(u_char *name, size_t len, void *val, void *para1,
                 stats->upstream_total_latency_ms / (stats->nr_requests > 0 ? stats->nr_requests : 1),
                 status_code_buckets[2],
                 status_code_buckets[4],
-                status_code_buckets[5]
+                status_code_buckets[5],
+                status_code_buckets[9]
             );
 
     stats->nr_requests = 0;
