@@ -1,5 +1,3 @@
-CC=gcc-4.7
-
 test: build
 	$(CC) test_accounting_id.o ngx_http_accounting_prefix.o -o ./test
 	./test
